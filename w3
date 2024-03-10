@@ -1,0 +1,233 @@
+---
+title: "Lab Week 3"
+subtitle: "STAT5003"
+author: "luyue yuan"
+params:
+  soln: TRUE   ## EDIT to TRUE when generating solution
+  supp: FALSE
+  show: 'as.is'  ## EDIT to 'as.is' when generating solutions, otherwise 'hide'
+output:
+   #   - css/styles.css
+  pdf_document:
+    number_sections: yes
+    toc: yes
+   # css: 
+    #  - https://use.fontawesome.com/releases/v5.0.6/css/all.css
+    toc: true
+    toc_depth: 3
+    toc_float: true
+    code_folding: hide
+  html_document:
+    fig_caption: yes
+    #include:
+     # after_body: css/stylesDD.js
+    number_sections: yes
+    self_contained: yes
+    theme: flatly
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## 1 Parametric density estimation
+
+1.1If we assume the heights data follows a Gaussian distribution, what are the maximum likelihood estimates of the parameters (i.e. the mean μ and standard deviation σ )? Hint: See ?mle from the stats4 library.
+
+```{r}
+data1a <- rnorm(100, mean = 10, sd = 10)
+hist(data1a)
+```
+
+```{r}
+library(ggplot2)
+ggplot(data.frame(x = data1a),aes(x = x)) + geom_histogram(bins = 30) +
+  ggtitle("Histogram of a simulated normal distribution")
+```
+
+1.2 Set the random seed to your student number using set.seed. Then create another sample from a normal distribution with a mean of 10 and sd of 10 and 100 observations. Demonstrate that if the seed is reset again to your student number, you can generate another ‘random’ sample that gives the same output. (Hint: the functions identical or all.equal are useful for this. The difference between these functions is discussed here.)
+
+```{r}
+set.seed(5003)
+x <- rnorm(100,mean = 10, sd = 10)
+y <- rnorm(100,mean = 10, sd = 10)
+set.seed(5003)
+z <- rnorm(100,mean = 10, sd = 10)
+identical(x,y)
+
+```
+
+```{r}
+identical(x,z)
+```
+
+1.3 Simulate another 100 samples of a normal distribution, this time with mean of 8 and standard deviation of 10. What is the log likelihood that this set of 100 observations are drawn from a normal distribution parameterised as N(μ=10,σ=10) ? Calculate the log likelihood for a range of parameter values μ=1,2,...20 , keeping σ=10 . Plot the log likelihood against μ . From the plot, what is the maximum likelihood estimate of μ ?
+
+You can do this question by defining the likelihood used above as a function or transforming the Gaussian density in R directly.
+
+```{r}
+data.1c <- rnorm(100,8,10)
+mu <- 1:20
+log.likelihood <- sapply(mu, function(x) sum(log(dnorm(data.1c, mean = x,sd = 10))))
+plot(mu, log.likelihood,type = "l",ylab = "Log Likelihood")
+mu.mle <- mu[which.max(log.likelihood)]
+mu.mle
+abline(v = mu.mle, lty = 2)
+```
+
+```{r}
+
+```
+
+## 2 Parametrics and Nonparametric density estimation
+
+2.1 For this question, we will be performing density estimates on the heights dataset. Load the heights data into a data frame (available from Canvas). Make a histogram of the heights, set the y axis to be probability not frequency. Repeat for 5, 10, and 20 bins.
+
+```{r}
+likelihood.tbl <- tibble(mu) |>
+  mutate(log.like = purrr::map_dbl(mu, \(x) sum(log(dnorm(data.1c, mean = x, sd = 10)))))
+ggplot(likelihood.tbl,aes(x = mu,y = log.like)) +
+  geom_line()
+```
+
+```{r}
+heights <- read.table("height.txt",header = TRUE)
+par = (mfrow = c(2,2))
+with(heights,hist(Height_m, probability = TRUE, xlab = "Height(m)"))
+n.bins <- c(5,10,20)
+invisible(lapply(n.bins, function(n){
+  hist(heights[["Height_m"]],probability = TRUE, breaks = n,
+       xlab = "Height(m)",
+       main = paste0("Histogram with n = ", n, "bins"))
+}))
+     
+```
+
+2.2 Use the density function to perform kernel density estimation. Do this with the Gaussian, the Epanechnikov, and the triangular kernels. Plot the results.
+
+```{r}
+kernels <- c("gaussian","epanechnikov","triangular")
+par(mfrow=c(2, 2))
+invisible(lapply(kernels,function(k){
+  plot(density(heights$Height_m,kernel = k),
+       main = paste(tools::toTitleCase(k),"kernel"))
+  rug(heights$Height_m)}))
+```
+
+```{r}
+kernel.estimates <- lapply(kernels, function(k) density(heights$Height_m, kernel = k))
+x.seg<- kernel.estimates[[1]]$x
+fhats <- lapply(kernel.estimates,"[","y")
+xlims<- range(x.seg)
+ylims<-c(-1e-2,max(unlist(fhats)+ 1e-2))
+plot(c(),ty="n", xlim = xlims, ylim = ylims,
+     xlab ="",ylab ="Density")
+for (k in seq_along(kernel.estimates))
+  lines(kernel.estimates[[k]], col=k)
+legend("topright", legend = tools::toTitleCase(kernels), col = 1:3, lty = "solid")
+rug(heights$Height_m)
+```
+
+2.3 Compute an estimate of the probability that a person is taller than 1.7m using a kernel density estimator.
+
+```{r}
+density.est <- density(heights[["Height_m"]])
+f <- approxfun(density.est)
+prob <- integrate(f,1.7,max(density.est$x))
+prob
+```
+
+2.4 If we assume the heights data follows a Gaussian distribution, what are the maximum likelihood estimates of the parameters (i.e. the mean μ and standard deviation σ)? Hint: See ?mle from the stats4 library.
+
+```{r}
+library(stats4)
+negativelogLikelihood <- function(m, s) {
+  if (s < 0)
+    return(Inf)
+  -sum(log(dnorm(heights$Height_m, mean = m, sd = s)))
+}
+
+mle.fit <- mle(negativelogLikelihood, list(m = 1,s = 1))
+mle.fit
+```
+
+## 3 Bandwidth selection
+
+3.1 Simulate 100 observations from a standard normal distribution. Using this sample conduct your investigation to determine the best bandwidth using the density function and computing the ISE (Integrated Square Error). The integrated square error is given by
+
+To do this, create grid of potential bandwidth values and compute the density estimator and validate it against the known standard normal density measuring its distance by the ISE. I would recommend using the arguments n = 512, from = -3, to = 3 in density for appropriate validation. Create two plots. One of your bandwidth grid against the ISE and plot your final optimal estimate against the true standard normal density for comparison.
+
+```{r}
+
+```
+
+```{r}
+set.seed(520)
+x <- rnorm(100)
+h <- seq(0.01, 1, length.out = 100)
+KDE <- lapply(h, function(h) {
+  density(x, bw = h, n = 512, from = -3, to = 3)
+})
+for (i in 1:length(KDE)) {
+  KDE[[i]] <- approxfun(KDE[[i]])
+}
+
+ise <- rep(0, length(h))
+
+
+ise.fun <- function(h) {
+  integrate(function(x) (KDE[[i]](x) - dnorm(x, mean = 0, sd = 1))^2, -3, 3, subdivisions = 1000, abs.tol = 0.001)$value
+}
+
+for (i in 1:length(h)) {
+  ise[i] <- ise.fun(h[i])
+}
+
+opt_index <- which.min(ise)
+opt_bandwidth <- h[opt_index]
+
+# Plot 
+plot(h, ise, type = "l", xlab = "Bandwidth", ylab = "Integrated Square Error")
+
+# Plot 
+dens <- density(x, bw = opt_bandwidth, n = 512, from = -3, to = 3)
+plot(dens$x, dens$y, type = "l", col = "blue", lwd = 2, xlab = "x", ylab = "Density")
+curve(dnorm(x, mean = 0, sd = 1), from = -3, to = 3, col = "red", add = TRUE)
+legend("topright", legend = c("Estimated", "True distribution"), col = c("blue", "red"), lty = 1)
+
+
+```
+
+3.2 For the heights dataset, explore the bandwidth selection algorithms given in the stats package (see for example the common documentation of some of the ? stats::bw.ucv).
+
+```{r}
+library(tidyr)
+bw.methods <- c("nrd0","nrd","ucv","bcv","SJ")
+rang <- range(heights$Height_m)
+densities <- vapply(bw.methods, function(x) suppressWarnings(density(heights$Height_m, bw = x, from = rang[1], to = rang[2])$y), numeric(512))
+dat <- densities |> as.data.frame() |>
+  gather(key = "Bandwidth", value = "density") |>
+    mutate(x= rep(seq(from = rang[1], to = rang[2], length.out = 512), length(bw.methods)))
+ggplot(dat) +
+    geom_line(data = dat,aes(x=x,y= density,color = Bandwidth))+
+    theme_minimal() +
+    geom_rug(data = heights, aes(x = Height_m))+
+    labs(x ="Height(m)", y="Density")
+```
+
+```{r}
+#methods <- c("nrd","nrd", "ucv","bcv","SJ")
+#bw <-bw.bcv(heights,lower=0.01,upper=1)
+#densities = vapply(methods,function(x) {
+ # density(heights,bw=x, from=min(heights), to = max(heights))$y
+ # },numeric(512))
+#library(dplyr)
+#library(tidyr)
+#dat<-densities |> as.data.frame() |>
+#  gather(key="Bandwidth",value="density") |>
+#  mutate(x=rep(seq(from=min(heights),to=max(heights),length.out=512),5))
+#df_heights = heights |> as.data.frame()
+#ggplot(dat)+
+#  geom_line(aes(x=x,y=density,color=Bandwidth)) +
+#  geom_rug(data=df_heights,aes(x=heights))+labs(x="height",y="density",color#="Bandwidth")
+```
